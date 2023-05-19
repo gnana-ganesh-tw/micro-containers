@@ -1,128 +1,259 @@
-# WebAssembly Demo on Multiple Platforms
+# Microcontainers - Session 01
 
-The demo implements traffic controller application in Rust. The application is built using Rust tools to Wasm target. The generated binary is run on three different platforms - Web, ESP32 and Raspberry Pi.
-
-Following diagram shows the setup and associated software components
-
-![Block Diagram](images/BlockDiagram.png)
-
-Each platform has a Wasm runtime with a platform interface application (called as `Indicator Controller`) which integrates with Wasm binary (`turn_indicator.wasm`) and provides platform specific API for reading push button status and updating LED status.
-
-## Hardware setup
-
-### Components
-
-1. Raspberry Pi with indicator board
-2. ESP32 board with indicator board
-3. Laptop
-4. WiFi hotspot
-
-## Demo setup
-
-### Network configuration
-
-1. The laptop should be connected to the internet.
-2. The ESP32 and Raspberry Pi should be connected to the laptop over local network.
-
-### Setup Raspberry Pi
-
-1. Connect the Raspberry Pi to the display using HDMI and connect the Raspberry pi to WiFi hotspot. Note down the ip
-   address from `ifconfig`
-2. Setup the ssh key so that the password will not be promted everytime we do ssh or scp. Follow
-   this [link](https://danidudas.medium.com/how-to-connect-to-raspberry-pi-via-ssh-without-password-using-ssh-keys-3abd782688a)
-   untill **Copy public key to Raspberry Pi**
-3. Copy the required files into the Raspberry Pi
-
-Copy the Python script on the device. The Python script is the application which binds with the wasm binary and provides platform APIs for the Wasm module.
+### Install Rust
 
 ```bash
-scp wasm_rpi/rpi_left_right_indicator.py pi@{raspberry_ip_address}:/home/pi/wasm
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-Copy the wasm binary to the device.
+### Creating your first rust project
 
 ```bash
-scp web/next_app/public/turn_indicator.wasm pi@{raspberry_ip_address}:/home/pi/wasm
+cargo new turn_indicator
+cd turn_indicator
 ```
 
-> Note: While exhecuting the above commands, the ssh password should not be promted. If not, retry the 2nd point again.
-
-4. Now, start the python script by running the following command.
+### Running the rust project
 
 ```bash
-ssh pi@{raspberry_ip_address} '/usr/bin/python3 /home/pi/wasm/rpi_left_right_indicator.py'
+cargo run 
 ```
 
-> Note:
->
-> 1. After the python script on RPi starts running and as the wasm binary is already copied on the target, the application should start running.
-> 2. You can verify by pressing indicator buttons and observing the indicator LEDs.
-> 3. After every power cycle/reboot, the python script must be started by executing command in 4.
+### Disabling the Standard Library
 
-### Setup for ESP32
+```rust
+#![no_std]
 
-We will be using Visual studio code for flashing the code to ESP32.
+fn main() {
+    println!("Hello, world!");
+}
+```
 
-1. Install VS code using [this link](https://code.visualstudio.com/download)
-2. Install `PlatformIO` plugin ![Platform IO Plugin](images/PlatformIO.png)
-3. Connect the GPIO pins of ESP32 with buttons and LEDs' as shown in the image below. ![ESP32 Circuit](images/circuit.png)
-4. Connect the ESP32 to the Host machine (PC) using a USB cable.
-5. Verify if the ESP32 is connected by running the following command `ls /dev/cu.*` (for MacOS)
-   ![List USB](images/list_of_usb.png)
-6. To enable ESP32 to connect with your local network, update the wifi access point details in the source code. Replace the `WIFI_SSID` and `WIFI_PASS` with correct values in the `platform.ini` file present in `platforms/tool/` with the content `build_flags =
-   -D WIFI_SSID='"wifi"'
-   -D WIFI_PASS='"password"'`
-7. Upload and monitor using following command:
+### Fixing `println!()` error
 
-   ```bash
-   platformio run --target upload --target monitor --environment esp32dev 
-   ```
+```rust
+#![no_std]
 
-   ![Upload and connect](images/esp32connected.png)
-   You can see all the console messages in VS Code monitor window.
+fn main() {}
+```
 
-8. You can see an IP is printed by the ESP32 monitor window once it is connected to the wifi. You can use this IP in the WebUI. (You can check the `platforms/tool/readme.md` for manually uploading and running the wasm from your terminal) ![Shell showing ESP32 connected](images/ESP32ConnectedtoWifi.png)
+### Panic Implementation
 
-> Note:
->
-> 1. The IP address of ESP32 should be noted here. This IP address can be used on the Web App to flash wasm binary from Web App.
-> 2. Step 7 can be done in the GUI. As shown in the image below. First select the `PlatformIO` from the sidebar then click `Upload and Monitor`.
-![PlatformIO Sidebar view](images/PlatformIOSidebar.png)
+```rust
+use core::panic::PanicInfo;
 
-Now the ESP32 is ready to be tested using the WebUI.
+/// This function is called on panic.
+#[panic_handler]
+fn panic(_info: &PanicInfo) -> ! {
+    loop {}
+}
+```
 
-## Web Application
+`!` denotes this function does not return.
 
-The Wasm Demo App is a web application which provides a single user interface to build, deploy and run the traffic controller Wasm application binary on three different platforms - Web, Raspberry Pi and ESP32.
+### Overwriting the Entry Point
 
-It should be noted that the objective of the application is not to provide a generic user interface and is meant for only the traffic controller implementation.
+```rust
+#![no_std]
+#![no_main]
 
-As of now, this application is tested in the development mode only. This document describes steps needed to run the application in the development mode.
+// ...
+```
 
-## Basic installation
+### Writing a rust function
 
-This application is developed using [Next.js](https://nextjs.org/docs) framework which is based on React.
+```rust
+#[no_mangle]
+unsafe fn start() {
+    loop {}
+}
+```
 
-The application can be built and run on MacOS, Linux and Windows platforms.
+### Defining Indicator mode
 
-### Install/update Node.js
+```rust
 
-1. As a first step, install [Node.js](https://nodejs.org/en).
-2. If you already have Node.js installed on your machine, ensure the version is 16.8.0 or higher.
+/* This enum can be used to choose the indicator mode or the way indicators
+   behave when turned on. The following modes are available:
+   - Continuous: The indicator is turned on until it is turned off again
+   - BlinkingFast: The indicator is turned on for 500ms and then turned off
+   for 500ms
+   - BlinkingSlow: The indicator is turned on for 2s and then turned off for
+   2s
+*/
+enum IndicatorMode {
+    Continuous = 0,
+    BlinkingFast = 500,
+    // 500ms
+    BlinkingSlow = 2000, // 2s
+}
+```
 
-### Install the Wasm Demo App
+### Setting the current Indicator mode
 
-1. Run a shell terminal in `.../rust-katas/web/next_app` directory.
-2. Run the following command to install node.js packages.
+```rust
+/* Update this variable to change the indicator  mode. */
+const CURRENT_INDICATOR_MODE: IndicatorMode = IndicatorMode::BlinkingFast;
+```
 
-   ```bash
-   npm install
-   ```
+### Handling right button push
 
-3. That's all! You can run the application now in the development mode with following command.
+```rust
+#[no_mangle]
+unsafe fn onRightButtonPressed(indicator_status: i32) {
+    if (indicator_status == 0) || (indicator_status == 1) {
+        // If both indicators are off or only the left indicator is active,
+        setIndicatorStatus(2, CURRENT_INDICATOR_MODE as i32);
+    } else if indicator_status == 2 {
+        // If the right indicator is active,
+        setIndicatorStatus(0, CURRENT_INDICATOR_MODE as i32);
+    }
+    /* If parking indicator is active (indicator_status == 3), no action needed. */
+}
+```
 
-   ```bash
-   npm run dev
-   ```
+### Handling left button push
 
-This command should start a server on <http://localhost:3000>. Open this url in a browser to see the application running.
+```rust
+
+#[no_mangle]
+unsafe fn onLeftButtonPressed(indicator_status: i32) {
+    if (indicator_status == 0) || (indicator_status == 2) {
+        // If both indicators are off or only the right indicator is active,
+        setIndicatorStatus(1, CURRENT_INDICATOR_MODE as i32);
+    } else if indicator_status == 1 {
+        // If the left indicator is active,
+        setIndicatorStatus(0, CURRENT_INDICATOR_MODE as i32);
+    }
+    /* If parking indicator is active (indicator_status == 3), no action needed. */
+}
+```
+
+### Handling right button push
+
+```rust
+
+#[no_mangle]
+unsafe fn onParkingButtonPressed(indicator_status: i32) {
+    if indicator_status == 3 {
+        // If parking indicator is active,
+        setIndicatorStatus(0, CURRENT_INDICATOR_MODE as i32);
+    } else {
+        // If parking indicator is not active,
+        setIndicatorStatus(3, CURRENT_INDICATOR_MODE as i32);
+    }
+}
+```
+
+### Defining API from platform
+
+```rust
+/*
+Functions implemented by the platform
+(these functions implement platform specific functionality)
+
+setIndicatorStatus: Sets the indicator status
+status : 0 - Left and Right indicators OFF
+         1 - Left indicator ON, Right indicator is OFF
+         2 - Right indicator ON, Left indicator is OFF
+         3 - Left and Right indicators ON (Parking mode is active)
+*/
+extern "C" {
+    // Returns the value of current indicator status
+    #[link_name = "getIndicatorStatus"]
+    fn get_indicator_status() -> i32;
+
+    #[link_name = "setIndicatorStatus"]
+    fn setIndicatorStatus(indicator_status: i32, mode: i32);
+
+    // Return 1 if the left button is pressed
+    #[link_name = "getLeftPushButtonState"]
+    fn getLeftPushButtonState() -> i32;
+
+    // Return 1 if the right button is pressed
+    #[link_name = "getRightPushButtonState"]
+    fn getRightPushButtonState() -> i32;
+
+    // Return 1 if the hazard button is pressed
+    #[link_name = "getHazardPushButtonState"]
+    fn get_hazard_push_button_state() -> i32;
+}
+```
+
+## Buzz of "WASM"
+
+WebAssembly (abbreviated Wasm) is a binary instruction format for a stack-based virtual machine. Wasm is designed as
+a **portable compilation target** for programming languages.
+
+### Why wasm ?
+
+(referred from https://webassembly.org/ )
+
+#### Efficient and fast
+
+The Wasm stack machine is designed to be encoded in a size- and load-time-efficient binary format. WebAssembly aims to
+execute at native speed by taking advantage of common hardware capabilities available on a wide range of platforms.
+
+#### Safe
+
+WebAssembly describes a memory-safe, sandboxed execution environment that may even be implemented inside existing
+JavaScript virtual machines. When embedded in the web, WebAssembly will enforce the same-origin and permissions security
+policies of the browser.
+
+
+### Targets in Rust
+(refer [Target Triplet](https://doc.rust-lang.org/nightly/rustc/platform-support.html))
+- Rust supports wasm target
+
+### Adding Rust target
+```bash
+rustup target add wasm32-wasi
+```
+### Compiling to wasm
+```bash
+cargo build --target wasm32-wasi
+```
+### Configuring the project to use a default target as wasm32-wasi
+Create a file called `Config.toml` in `.cargo` folder with the following contents
+```toml
+[build]
+target = "wasm32-wasi"
+```
+Now, `cargo build` can be used to generate a `turn_indicator.wasm` file 
+
+
+## Micro-controller
+
+It is a small computer with memory, GPIO pins for input and outputs, which is capable of doing a specific task. For
+example, engine control in automobile, washing machines, etc.
+
+### Types of Microcontrollers
+
+(refer here for more https://www.elprocus.com/microcontrollers-types-and-applications/)
+
+#### Based on number of bits
+
+- 8 bit
+- 16 bit
+- 32 bit
+- 64 bit
+
+### Problem with Microcontroller specific codebase
+
+Different microcontroller usually has its own set of libraries and drivers. Which means the application that we write on
+one platform
+
+(more on this in the next session!!)
+
+
+## Some useful rust resources to get you started
+
+- [Rusltings](https://github.com/rust-lang/rustlings): 🦀 Small exercises to get you used to reading and writing Rust
+  code!
+- [The Rust Book](https://doc.rust-lang.org/book/): by Steve Klabnik and Carol Nichols, with contributions from the Rust
+  Community
+
+#### Embedded Rust
+
+- [The Embedded Rust Book](https://docs.rust-embedded.org/book/): An introductory book about using the Rust Programming
+  Language on "Bare Metal" embedded systems, such as Microcontrollers.
